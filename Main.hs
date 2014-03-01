@@ -92,7 +92,7 @@ instance PP Expression where
                    (Op op' e1' e2') -> fpp e1' <+> pp op' <+> fpp' e2'
                    _                -> pp e
           fpp' e = case e of
-                   o@(Op op' e1' e2') ->PP.parens (fpp o)
+                   o@(Op _  _  _ )  ->PP.parens (fpp o)
                    _                -> pp e
  
 instance PP Statement where
