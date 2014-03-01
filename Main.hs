@@ -193,13 +193,13 @@ valueP :: Parser Value
 valueP = intP <|> boolP
 
 intP :: Parser Value
-intP = error "TBD"
+intP = liftM IntVal int
 
 constP :: String -> a -> Parser a
-constP _ _ = error "TBD"
+constP s x = (string s) >> return x
 
 boolP :: Parser Value
-boolP = error "TBD"
+boolP = liftM BoolVal (constP "true" True <|> constP "false" False)
 
 opP :: Parser Bop 
 opP = error "TBD"
