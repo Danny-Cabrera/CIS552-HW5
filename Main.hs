@@ -83,13 +83,16 @@ instance PP Expression where
   pp (Var va)           = PP.text va
   pp (Val va)           = pp va
   pp (Op op exp1 exp2)  = case op of
-                               Plus   -> fpp exp1 <+> pp op <+> PP.parens (fpp exp2) 
-                               Minus  -> fpp exp1 <+> pp op <+> PP.parens (fpp exp2)
-                               Times  -> PP.parens (fpp exp1)<+> pp op <+> PP.parens (fpp exp2)
-                               Divide -> PP.parens (fpp exp1)<+> pp op <+> PP.parens (fpp exp2)
+                               Plus   -> fpp exp1 <+> pp op <+> fpp' exp2 
+                               Minus  -> fpp exp1 <+> pp op <+> fpp' exp2
+                               Times  -> fpp' exp1<+> pp op <+> fpp' exp2
+                               Divide -> fpp' exp1<+> pp op <+> fpp' exp2
                                _      -> fpp exp1 <+> pp op <+> fpp exp2
     where fpp e  = case e of
                    (Op op' e1' e2') -> fpp e1' <+> pp op' <+> fpp' e2'
+                   _                -> pp e
+          fpp' e = case e of
+                   o@(Op op' e1' e2') ->PP.parens (fpp o)
                    _                -> pp e
  
 instance PP Statement where
