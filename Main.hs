@@ -214,7 +214,7 @@ wsP :: Parser a -> Parser a
 wsP p = p >>= \a -> many space >> return a
 
 exprP :: Parser Expression
-exprP = wsP (choice [liftM Val valueP, liftM Var varP, opp])
+exprP = wsP (choice [liftM Val valueP, liftM Var varP])
 
 t11 :: Test
 t11 = TestList ["s1" ~: succeed (parse exprP "1 "),
@@ -250,11 +250,51 @@ t13 = TestList ["s1" ~: testRT "fact.imp",
                 "s3" ~: testRT "abs.imp" ,
                 "s4" ~: testRT "times.imp" ]
 
+-- Generators
+genBop :: Gen Bop
+genBop = elements [ Plus, Minus, Times, Divide ]
+
+genCmp :: Gen Bop
+genCmp = elements [ Gt, Ge, Lt, Le ]
+
+genVar :: Gen Variable
+genVar = listOf1 (elements ['A'..'Z'])
+
+genOp :: Gen Expression
+genOp = oneof [ genCmpOp, genArithOp ]
+
+genExpr :: Gen Expression
+genExpr = oneof [ liftM Var genVar, liftM (Val . IntVal) arbitrary ]
+
+genArithOp :: Gen Expression
+genArithOp = liftM3 Op genBop arith arith where
+  arith = frequency [ (2, genExpr)
+                    , (1, genArithOp) ]
+
+genCmpOp :: Gen Expression
+genCmpOp = liftM3 Op genCmp genExpr genExpr
+
+instance Arbitrary Value where
+  arbitrary = frequency [ (6, liftM IntVal arbitrary)
+                        , (2, return $ BoolVal True)
+                        , (2, return $ BoolVal False) ]
+
+instance Arbitrary Expression where
+  arbitrary = frequency [ (1, genOp)
+                        , (2, liftM Val arbitrary)
+                        , (2, liftM Var genVar) ]
+
 instance Arbitrary Statement where
-  arbitrary = undefined
+  arbitrary = frequency [ (3, liftM2 Assign genVar arbitrary)
+                        , (1, liftM3 If arbitrary arbitrary arbitrary)
+                        , (1, liftM2 While arbitrary arbitrary)
+                        , (1, liftM2 Sequence arbitrary arbitrary)
+                        , (2, return Skip) ]
 
 prop_roundtrip :: Statement -> Bool
-prop_roundtrip = error "prop_roundtrip undefined"
+prop_roundtrip stm = case parse statementP (display stm) of
+                          Right stm'  -> (toList stm) == (toList stm')
+                          Left _      -> False
 
 
 ------------------------------------------------------------------------
