@@ -211,10 +211,10 @@ varP :: Parser Variable
 varP = many1 upper
 
 wsP :: Parser a -> Parser a
-wsP p = error "TBD"
+wsP p = p >>= \a -> many space >> return a
 
 exprP :: Parser Expression
-exprP = error "TBD"
+exprP = wsP (choice [liftM Val valueP, liftM Var varP, opp])
 
 t11 :: Test
 t11 = TestList ["s1" ~: succeed (parse exprP "1 "),
