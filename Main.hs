@@ -2,7 +2,7 @@
 -- by <NAME1> <PENNKEY1>
 --    <NAME2> <PENNKEY2>
 
-{-# OPTIONS -Wall -fwarn-tabs -fno-warn-type-defaults  #-}
+{-# OPTIONS -Wall -fwarn-tabs -fno-warn-type-defaults #-}
 module Main where 
 
 import Control.Monad
@@ -205,7 +205,14 @@ boolP :: Parser Value
 boolP = liftM BoolVal (constP "true" True <|> constP "false" False)
 
 opP :: Parser Bop 
-opP = error "TBD"
+opP = choice [ constP "+"  Plus
+             , constP "-"  Minus
+             , constP "*"  Times
+             , constP "/"  Divide
+             , constP ">=" Ge
+             , constP ">"  Gt
+             , constP "<=" Le
+             , constP "<"  Lt]
 
 varP :: Parser Variable
 varP = many1 upper
@@ -214,7 +221,7 @@ wsP :: Parser a -> Parser a
 wsP p = p >>= \a -> many space >> return a
 
 exprP :: Parser Expression
-exprP = wsP (choice [liftM Val valueP, liftM Var varP])
+exprP = wsP (choice [bopP, liftM Val valueP, liftM Var varP])
 
 parenP :: Parser a -> Parser a
 parenP p = between (wsP (string "(")) p (wsP (string ")"))
@@ -225,24 +232,19 @@ comparitorP = choice [ constP ">=" Ge
                      , constP "<=" Le
                      , constP "<" Lt ]
 
-
 bopP :: Parser Expression
-bopP  = prodE 'chainl1' addOp where
-   --prodE   = compE 'chainl1' mulOp
-   prodE   = undefined
-   compE   = liftM3 (flip Op) factorE comparitorP
- factorE <|> factorE
-   factorE = wsP (choice [parenP bopP, liftM Var varP, liftM Val intP ])
-   addOp   = opP >>= \bop -> case bop of
-                               Plus   -> return $ Op Plus
-                               Minus  -> return $ Op Minus
-                               _      -> fail ""
-   mulOp    = opP >>= \bop -> case bop of
-                               Times  -> return $ Op Times
-                               Divide -> return $ Op Divide
-                               _      -> fail ""
-
-
+bopP = chainl1 (wsP $ prodE) (wsP $ addOp) where
+  prodE = chainl1 (wsP $ compE)  (wsP $ mulOp)
+  compE = liftM3 (flip Op) factorE (wsP $ comparitorP) factorE <|> factorE
+  factorE = wsP (choice [parenP bopP, liftM Var varP, liftM Val intP])
+  addOp   = opP >>= \bop -> case bop of
+                              Plus     -> return $ Op Plus
+                              Minus    -> return $ Op Minus
+                              _        -> fail ""
+  mulOp   = opP >>= \bop -> case bop of
+                              Times    -> return $ Op Times
+                              Divide   -> return $ Op Divide
+                              _        -> fail ""
 t11 :: Test
 t11 = TestList ["s1" ~: succeed (parse exprP "1 "),
                 "s2" ~: succeed (parse exprP "1  + 2") ] where
