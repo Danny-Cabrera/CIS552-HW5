@@ -214,7 +214,34 @@ wsP :: Parser a -> Parser a
 wsP p = p >>= \a -> many space >> return a
 
 exprP :: Parser Expression
-exprP = wsP (choice [liftM Val valueP, liftM Var varP, opp])
+exprP = wsP $ choice [bopP,liftM Val valueP, liftM Var varP]
+
+parenP :: Parser a -> Parser a
+parenP p = between (wsP (string "(")) p (wsP (string ")"))
+
+comparitorP :: Parser Bop
+comparitorP = choice [ constP ">=" Ge
+                     , constP ">" Gt
+                     , constP "<=" Le
+                     , constP "<" Lt ]
+
+
+bopP :: Parser Expression
+bopP  = prodE 'chainl1' addOp where
+   --prodE   = compE 'chainl1' mulOp
+   prodE   = undefined
+   compE   = liftM3 (flip Op) factorE comparitorP
+ factorE <|> factorE
+   factorE = wsP (choice [parenP bopP, liftM Var varP, liftM Val intP ])
+   addOp   = opP >>= \bop -> case bop of
+                               Plus   -> return $ Op Plus
+                               Minus  -> return $ Op Minus
+                               _      -> fail ""
+   mulOp    = opP >>= \bop -> case bop of
+                               Times  -> return $ Op Times
+                               Divide -> return $ Op Divide
+                               _      -> fail ""
+
 
 t11 :: Test
 t11 = TestList ["s1" ~: succeed (parse exprP "1 "),
@@ -223,7 +250,40 @@ t11 = TestList ["s1" ~: succeed (parse exprP "1 "),
   succeed (Right _) = assert True
 
 statementP :: Parser Statement
-statementP = error "TBD"
+statementP = wsP (choice [sequenceP, skipP, assignP, ifP, whileP])
+
+assignP :: Parser Statement
+assignP  = do
+     v   <-  wsP (varP)
+     _   <-  wsP (string ":=")
+     val <- exprP
+     return $ Assign v val
+
+ifP :: Parser Statement
+ifP  = do 
+    e    <-  between (wsP (string "if")) (wsP (exprP)) (wsP (string "then"))
+    st1  <-  wsP (statementP)
+    st2  <-  between (wsP (string "else")) (wsP (statementP)) (wsP (string "endif"))
+    return (If e st1 st2)
+
+
+whileP :: Parser Statement
+whileP  = do 
+    e  <- between (wsP (string "while")) (wsP (exprP)) (wsP (string "do"))
+    st <- wsP (statementP)
+    _  <- wsP (string "endwhile")
+    return $ While e st
+
+skipP :: Parser Statement
+skipP  = wsP (constP "skip" Skip)
+
+sequenceP :: Parser Statement
+sequenceP  = do 
+    st1 <- choice [skipP, assignP, ifP, whileP]
+    _   <- wsP (string ";")
+    st2 <- statementP
+    return $ Sequence st1 st2
+
 
 t12 :: Test
 t12 = TestList ["s1" ~: p "fact.imp",
