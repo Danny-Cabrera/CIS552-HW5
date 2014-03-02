@@ -433,8 +433,6 @@ t2 :: Test
 t2 = parse lexer "X := 3" ~?= 
         Right [TokVar "X", Keyword ":=", TokVal (IntVal 3)]
 
-t2' ::
-
 
 prop_groundtrip :: Statement -> Bool
 prop_groundtrip = undefined
