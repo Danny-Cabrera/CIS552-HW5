@@ -83,18 +83,18 @@ instance PP Expression where
   pp (Var va)           = PP.text va
   pp (Val va)           = pp va
   pp (Op op exp1 exp2)  = case op of
-                               Plus   -> fpp exp1 <+> pp op <+> fpp' exp2 
-                               Minus  -> fpp exp1 <+> pp op <+> fpp' exp2
-                               Times  -> fpp' exp1<+> pp op <+> fpp' exp2
-                               Divide -> fpp' exp1<+> pp op <+> fpp' exp2
-                               _      -> fpp exp1 <+> pp op <+> fpp exp2
+                               Plus   -> fpp  exp1 <+> pp op <+> fpp' exp2 
+                               Minus  -> fpp  exp1 <+> pp op <+> fpp' exp2
+                               Times  -> fpp' exp1 <+> pp op <+> fpp' exp2
+                               Divide -> fpp' exp1 <+> pp op <+> fpp' exp2
+                               _      -> fpp  exp1 <+> pp op <+> fpp  exp2
     where fpp e  = case e of
                    (Op op' e1' e2') -> fpp e1' <+> pp op' <+> fpp' e2'
                    _                -> pp e
           fpp' e = case e of
                    o@(Op _  _  _ )  ->PP.parens (fpp o)
                    _                -> pp e
- 
+
 instance PP Statement where
   pp (Assign v e)     = PP.text v <+> PP.colon <> PP.equals <+> pp e
   pp (If e st1 st2)   = PP.vcat [ PP.text "if" <+> pp e <+> PP.text "then"
@@ -134,60 +134,62 @@ t0 = TestList [display oneV ~?= "1",
       display (Assign "X" threeV) ~?= "X := 3",
       display Skip ~?= "skip"  ]
 
+
+
 --- (Your own test cases go here...)
+
+------------ statement instances
+
+while_instance :: Statement
+while_instance = (While (Op Lt (Var "X") (Op Times (Val (IntVal 3)) (Val (IntVal 6)))) s)
+  where
+    s = Sequence (Assign "Z" (Op Plus (Var "Z") (Var "Y")))
+                 (Assign "X" (Op Minus (Var "X") oneV))
+
+if_instance :: Statement
+if_instance  = (If (Op Ge (Var "X") zeroV) (Assign "V" (Op Plus zeroV oneV)) Skip)
+
+assign_instance :: Statement
+assign_instance  = Sequence (Assign "X" oneV)
+                            (Sequence (Assign "Y" twoV)
+                                      (Assign "Z" threeV))
+
+-------- test cases
+
+t0_more :: Test
+t0_more  = TestList [testtoList, t0b', t0_while, t0_if , t0_ass, t0_seq, t0_paren]
 
 testtoList :: Test
 testtoList  = toList (Sequence (Assign "Z" (Op Plus (Var "Z") (Var "Y")))
-                              (Assign "X" (Op Minus (Var "X") oneV)))
+                               (Assign "X" (Op Minus (Var "X") oneV)))
                            ~?= [Assign "Z" (Op Plus (Var "Z") (Var "Y")),Assign "X" (Op Minus (Var "X") oneV)]
 
 t0b' :: Test
 t0b' = display (If (Val (BoolVal True)) Skip Skip) ~?=
       "if true then\n  skip\nelse  skip\nendif"
 
--- 
-whileExample :: Statement
-whileExample = (While (Op Gt (Var "X") zeroV) s)
-  where
-    s = Sequence (Assign "Z" (Op Plus (Var "Z") (Var "Y")))
-                 (Assign "X" (Op Minus (Var "X") oneV))
+t0_while :: Test
+t0_while = display while_instance ~?=
+            "while X < 3 * 6 do\n  Z := Z + Y;\n  X := X - 1\nendwhile"
 
-assignExample :: Statement
-assignExample = Sequence (Sequence (Assign "X" oneV)
-                                   (Assign "Y" twoV))
-                         (Assign "Z" threeV)
+t0_if :: Test
+t0_if = display if_instance ~?=
+          "if X >= 0 then\n  V := 0 + 1\nelse  skip\nendif"
 
-t0c :: Test
-t0c = display whileExample ~?=
-      "while X > 0 do\n  Z := Z + Y;\n  X := X - 1\nendwhile"
-
-t0d :: Test
-t0d = display (If (Op Lt (Var "X") zeroV) s1 Skip) ~?=
-      "if X < 0 then\n  X := 0 - X\nelse  skip\nendif"
-  where
-    s1 = Assign "X" (Op Minus zeroV (Var "X"))
-
-t0e :: Test
-t0e = display (Assign "X" (Op Plus (Op Minus (Op Plus oneV twoV) threeV)
+t0_ass :: Test
+t0_ass = display (Assign "X" (Op Plus (Op Minus (Op Plus oneV twoV) threeV)
                                     (Op Plus oneV threeV)) ) ~?=
-  "X := 1 + 2 - 3 + (1 + 3)"
+           "X := 1 + 2 - 3 + (1 + 3)"
+t0_seq :: Test
+t0_seq = display (Sequence assign_instance while_instance) ~?=
+           "X := 1;\nY := 2;\nZ := 3;\nwhile X < 3 * 6 do\n  Z := Z + Y;\n  X := X - 1\nendwhile"
+
 
 --test if parentness are added corrected according to the precedence of the opreators
-t0f :: Test
-t0f =  display(Assign "Y" (Op Times (Op Plus twoV threeV) oneV)) ~?=
+
+t0_paren :: Test
+t0_paren =  display(Assign "Y" (Op Times (Op Plus twoV threeV) oneV)) ~?=
               "Y := (2 + 3) * 1"
-
-t0g :: Test
-t0g = display (Sequence assignExample whileExample) ~?=
-      "X := 1;\nY := 2;\nZ := 3;\n" ++
-      "while X > 0 do\n  Z := Z + Y;\n  X := X - 1\nendwhile"
-
-
-
-
-test0 :: Test
-test0 = TestList [ t0, testtoList, t0b', t0c, t0d, t0e,t0f,t0g]
-
 
 ------------------------------------------------------------------------
 -- Problem 1
@@ -440,7 +442,7 @@ prop_groundtrip = undefined
 -- A main action to run all the tests...
 
 main :: IO () 
-main = do _ <- runTestTT (TestList [ t0, test0,                            -- Prob 0
+main = do _ <- runTestTT (TestList [ t0, t0_more,                          -- Prob 0
                                      t11, t11_more,  t12, t12_more, t13,   -- Prob 1
                                      t2 ])
           return ()
