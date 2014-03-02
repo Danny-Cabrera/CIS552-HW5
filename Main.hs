@@ -231,25 +231,41 @@ comparitorP = choice [ constP ">=" Ge
                      , constP ">" Gt
                      , constP "<=" Le
                      , constP "<" Lt ]
-
 bopP :: Parser Expression
-bopP = chainl1 (wsP $ prodE) (wsP $ addOp) where
-  prodE = chainl1 (wsP $ compE)  (wsP $ mulOp)
-  compE = liftM3 (flip Op) factorE (wsP $ comparitorP) factorE <|> factorE
-  factorE = wsP (choice [parenP bopP, liftM Var varP, liftM Val intP])
-  addOp   = opP >>= \bop -> case bop of
+bopP  = liftM3 (flip Op) factorE (wsP $ comparitorP) factorE <|> factorE where
+   factorE =  chainl1 (wsP $ prodE) (wsP $ addOp)
+   prodE   =  chainl1 (wsP $ compE)  (wsP $ mulOp)
+   compE   =  wsP (choice [parenP bopP, liftM Var varP, liftM Val intP])
+   addOp   = opP >>= \bop -> case bop of
                               Plus     -> return $ Op Plus
                               Minus    -> return $ Op Minus
                               _        -> fail ""
-  mulOp   = opP >>= \bop -> case bop of
+   mulOp   = opP >>= \bop -> case bop of
                               Times    -> return $ Op Times
                               Divide   -> return $ Op Divide
                               _        -> fail ""
+
 t11 :: Test
 t11 = TestList ["s1" ~: succeed (parse exprP "1 "),
                 "s2" ~: succeed (parse exprP "1  + 2") ] where
   succeed (Left _)  = assert False
   succeed (Right _) = assert True
+
+
+-- Test cases for simple expression----
+
+t11_more :: Test
+t11_more = TestList [t11_precedence,t11_comp]
+
+t11_precedence :: Test
+t11_precedence  = parse exprP "(1 + 2) * (4 / 5)" ~?=
+                   Right (Op Times (Op Plus (Val (IntVal 1)) (Val (IntVal 2))) (Op Divide (Val (IntVal 4)) (Val (IntVal 5))))
+
+t11_comp :: Test
+t11_comp  = parse exprP "L <= 3 + 4 * 5" ~?= 
+             (Right (Op Le (Var "L") (Op Plus (Val (IntVal 3)) (Op Times (Val (IntVal 4)) (Val (IntVal 5))))))
+---------------------------------------
+
 
 statementP :: Parser Statement
 statementP = wsP (choice [sequenceP, skipP, assignP, ifP, whileP])
@@ -296,6 +312,33 @@ t12 = TestList ["s1" ~: p "fact.imp",
     -- Or: p = succeed <=< parseFromFile statementP
   succeed (Left _)  = assert False
   succeed (Right _) = assert True
+
+
+
+-- Test cases for simple statements ---
+t12_more :: Test
+t12_more  = TestList[t12_seq, t12_skip, t12_ass, t12_if, t12_while]
+
+t12_seq :: Test
+t12_seq  = parse statementP "F := 1 + 2 * 3; X := 3" ~?=
+            (Right (Sequence (Assign "F" (Op Plus (Val (IntVal 1)) (Op Times (Val (IntVal 2)) (Val (IntVal 3))))) (Assign "X" (Val (IntVal 3)))))
+   
+t12_skip :: Test
+t12_skip  = parse statementP "skip" ~?=
+              (Right Skip)
+
+t12_ass :: Test
+t12_ass  = parse statementP "X := (1 + 2) * 3" ~?= 
+            (Right (Assign "X" (Op Times (Op Plus (Val (IntVal 1)) (Val (IntVal 2))) (Val (IntVal 3)))))
+
+t12_if :: Test
+t12_if = parse statementP "if L > 2 then\n  X := 1 else X := 2\n endif" ~?=
+           (Right (If (Op Gt (Var "L") (Val (IntVal 2))) (Assign "X" (Val (IntVal 1))) (Assign "X" (Val (IntVal 2)))))
+
+t12_while :: Test
+t12_while  = parse statementP "while X < 3 * 6 do\n  skip\nendwhile" ~?= 
+              (Right (While (Op Lt (Var "X") (Op Times (Val (IntVal 3)) (Val (IntVal 6)))) Skip))
+----------------------------------
 
 testRT :: String -> Assertion
 testRT filename = do 
@@ -397,8 +440,8 @@ prop_groundtrip = undefined
 -- A main action to run all the tests...
 
 main :: IO () 
-main = do _ <- runTestTT (TestList [ t0, 
-                                     t11, t12, t13, 
+main = do _ <- runTestTT (TestList [ t0, test0,                            -- Prob 0
+                                     t11, t11_more,  t12, t12_more, t13,   -- Prob 1
                                      t2 ])
           return ()
 
