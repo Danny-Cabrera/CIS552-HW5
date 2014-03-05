@@ -2,6 +2,9 @@
 
 -- CIS 552, University of Pennsylvania
 -- based on Parsec and ReadP parsing libraries
+
+-- this file has also be modified using the newly defined TokenParser module!
+
 module ParserCombinators where
 
 import Parser
@@ -16,13 +19,14 @@ type ParseError = String
 -- combinator library doesn't support descriptive parse errors.
 -- However, for compatibility with Parsec, we give this function 
 -- the same type.
-parse :: Parser a -> String -> Either ParseError a
+
+parse           :: TknParser e a -> [e] -> Either ParseError a
 parse parser str = case (doParse parser str) of 
     []      -> Left  "No parses"
     [(a,_)] -> Right a
     _       -> Left  "Multiple parses"
     
-parseFromFile :: Parser a -> String -> IO (Either ParseError a)
+parseFromFile                :: Parser a -> String -> IO (Either ParseError a)
 parseFromFile parser filename = do 
   handle <- openFile filename ReadMode 
   str <- hGetContents handle
@@ -39,29 +43,29 @@ space = satisfy isSpace
    
 -- | Parses and returns the specified character        
 -- succeeds only if the input is exactly that character
-char :: Char -> Parser Char
+char  :: Char -> Parser Char
 char c = satisfy (c ==)   
 
 -- | Parses and returns the specified string. 
 -- Succeeds only if the input is the given string
 string :: String -> Parser String
-string = mapM char
+string  = mapM char
 
 -- | succeed only if the input is a (positive or negative) integer
 int :: Parser Int
-int = do n <- string "-" <|> return []
-         s <- many1 digit  
-         return $ (read (n ++ s) :: Int)
+int  = do n <- string "-" <|> return []
+          s <- many1 digit  
+          return $ (read (n ++ s) :: Int)
 
 -- | given a parser, apply it as many times as possible                         
 -- and return the answer in a list
-many   :: Parser a -> Parser [a]
+many   :: TknParser e a -> TknParser e [a]
 many p = many1 p <|> many0 
    where many0 = return []
                     
 -- | given a parser, apply it as many times as possible,
 -- but at least once.
-many1 :: Parser a -> Parser [a]
+many1  :: TknParser e a -> TknParser e [a]
 many1 p = do x  <- p
              xs <- many p
              return (x:xs)
@@ -70,11 +74,11 @@ many1 p = do x  <- p
 --   Returns a value produced by a /left/ associative application of all
 --   functions returned by @op@. If there are no occurrences of @p@, @x@ is
 --   returned.
-chainl :: Parser b -> Parser (b -> b -> b) -> b -> Parser b
+chainl :: TknParser e b -> TknParser e (b -> b -> b) -> b -> TknParser e b
 chainl p op x = chainl1 p op <|> return x
 
 -- | Like 'chainl', but parses one or more occurrences of @p@.
-chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
+chainl1        :: TknParser e a -> TknParser e (a -> a -> a) -> TknParser e a
 p `chainl1` pop = p >>= rest
     where rest x = next x <|> return x 
           next x = do o <- pop
@@ -83,12 +87,12 @@ p `chainl1` pop = p >>= rest
                       
                       
 -- | Combine all parsers in the list (sequentially)
-choice :: [Parser a] -> Parser a
+choice :: [TknParser e a] -> TknParser e a
 choice = foldr (<|>) (fail "")
 
 -- | @between open close p@ parses @open@, followed by @p@ and finally
 --   @close@. Only the value of @p@ is returned.
-between :: Parser open -> Parser a -> Parser close -> Parser a
+between             :: TknParser e open -> TknParser e a -> TknParser e close -> TknParser e a
 between open p close = do _ <- open
                           x <- p
                           _ <- close
@@ -96,12 +100,12 @@ between open p close = do _ <- open
 
 -- | @sepBy p sep@ parses zero or more occurrences of @p@, separated by @sep@.
 --   Returns a list of values returned by @p@.
-sepBy :: Parser a -> Parser sep -> Parser [a]
+sepBy      :: TknParser e a -> TknParser e sep -> TknParser e [a]
 sepBy p sep = sepBy1 p sep <|> return []
 
 -- | @sepBy1 p sep@ parses one or more occurrences of @p@, separated by @sep@.
 --   Returns a list of values returned by @p@.
-sepBy1 :: Parser a -> Parser sep -> Parser [a]
+sepBy1      :: TknParser e a -> TknParser e sep -> TknParser e [a]
 sepBy1 p sep = liftM2 (:) p (many (sep >> p))
 
 

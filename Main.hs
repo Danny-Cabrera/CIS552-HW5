@@ -11,7 +11,7 @@ import Test.QuickCheck
 import Text.PrettyPrint (Doc, (<+>),(<>))
 import qualified Text.PrettyPrint as PP
 
-import TokenParser
+import Parser
 import ParserCombinators
 
 import Test.HUnit
