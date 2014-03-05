@@ -1,6 +1,6 @@
 -- Advanced Programming, HW 5
 -- by <NAME1> <PENNKEY1>
---    <NAME2> <PENNKEY2>
+--    <Suiyao Ma> <masuiyao>
 
 {-# OPTIONS -Wall -fwarn-tabs -fno-warn-type-defaults #-}
 module Main where 
@@ -112,8 +112,9 @@ instance PP Statement where
   pp (Skip)             = PP.text "skip"
 
 toList :: Statement -> [Statement]
-toList (Sequence s1 s2) = s1 : toList s2
+toList (Sequence s1 s2)     = (toList s1) ++ (toList s2)
 toList st                   = [st]
+
 
 display :: PP a => a -> String
 display = show . pp
@@ -400,12 +401,22 @@ instance Arbitrary Statement where
                         , (1, liftM2 Sequence arbitrary arbitrary)
                         , (2, return Skip) ]
 
+
 prop_roundtrip :: Statement -> Bool
 prop_roundtrip stm = case parse statementP (display stm) of
-                          Right stm'  -> (toList stm) == (toList stm')
+                          Right stm'  -> checkEqual (toList stm) (toList stm')
                           Left _      -> False
 
-
+checkEqual :: [Statement] -> [Statement] -> Bool
+checkEqual [] []         = True
+checkEqual (x:xs) (y:ys) = check x y && checkEqual xs ys where
+   check (If e1 s1 s2) (If e2 s1' s2')       = e1 == e2 && check s1 s1' && check s2 s2'
+   check (While e1 s1) (While e2 s2)         = e1 == e2 && check s1 s2
+   check a1@(Sequence _ _) b1@(Sequence _ _) = checkEqual (toList a1) (toList b1)
+   check (Assign v1 e1) (Assign v2 e2)       = v1 == v2 && e1 == e2
+   check (Skip) (Skip)                       = True
+   check _      _                            = False
+checkEqual _  _          = False
 ------------------------------------------------------------------------
 -- Problem 2
 
@@ -617,8 +628,8 @@ t22_while  = parse statementTP [Keyword "while",TokVar "X",TokBop Lt,TokVal (Int
 prop_groundtrip    :: Statement -> Bool
 prop_groundtrip stm = case parse lexer (display stm) of 
                           Right tokens -> case parse statementTP tokens of
-                                               Right stm'    -> (toList stm) == (toList stm')
-                                               Left  _      -> False
+                                           Right stm'    -> checkEqual (toList stm) (toList stm')
+                                           Left  _       -> False
                           Left  _      -> False
 -----------------------------------------------------------------
 -- A main action to run all the tests...
