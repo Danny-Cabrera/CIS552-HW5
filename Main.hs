@@ -8,10 +8,10 @@ module Main where
 import Control.Monad
 import Test.QuickCheck
 
-import Text.PrettyPrint (Doc, (<+>),($$),(<>))
+import Text.PrettyPrint (Doc, (<+>),(<>))
 import qualified Text.PrettyPrint as PP
 
-import Parser
+import TokenParser
 import ParserCombinators
 
 import Test.HUnit
@@ -433,16 +433,197 @@ t2 :: Test
 t2 = parse lexer "X := 3" ~?= 
         Right [TokVar "X", Keyword ":=", TokVal (IntVal 3)]
 
+-- methods for parsing statement on tokens
 
-prop_groundtrip :: Statement -> Bool
-prop_groundtrip = undefined
 
+-- token parser for expression, simple convert the parser type using TknParser,
+-- and use monad State instead of string concatenation and split.
+
+valueTP :: TknParser Token Value
+valueTP =  do tkn <- getE
+              case tkn of
+                   TokVal v -> return v
+                   _        -> fail ""
+
+intTP :: TknParser Token Value
+intTP  = do tkn <- getE
+            case tkn of
+                 TokVal (IntVal v) -> return $ IntVal v
+                 _                 -> fail ""
+
+boolTP :: TknParser Token Value
+boolTP = do tkn <- getE
+            case tkn of
+                 TokVal (BoolVal bv) -> return $ BoolVal bv
+                 _                   -> fail ""
+
+
+-- don't need since it's tokens, there are no whitespace here
+-- wsTP  :: TknParser Token a -> TknParser Token a
+-- wsTP p = p >>= \a -> many space >> return a
+
+-- don't need since operator are opTP here
+{-
+opP :: Parser Bop 
+opP = choice [ constP "+"  Plus
+             , constP "-"  Minus
+             , constP "*"  Times
+             , constP "/"  Divide
+             , constP ">=" Ge
+             , constP ">"  Gt
+             , constP "<=" Le
+             , constP "<"  Lt]
+-}
+
+opTP :: TknParser Token Bop
+opTP  = do tkn <- getE
+           case tkn of
+                TokBop bop  -> return bop
+                _           -> fail ""
+              
+
+varTP :: TknParser Token Variable
+varTP  = do tkn <- getE
+            case tkn of
+                 TokVar v -> return v
+                 _        -> fail ""
+
+-- may not be used, instead we only need to parse keyword here
+-- constTP :: String -> a -> TknParser char a
+-- constTP s x = (string s) >> return x
+
+-- new addition : like constP, check if the string s is within keyword set, and parse it accordingly.
+
+keywordTP  :: String ->  TknParser Token Token
+keywordTP s = do tkn <- getE
+                 case tkn of
+                      Keyword k -> if s == k then return tkn else fail ""
+                      _         -> fail ""
+
+parenTP  :: TknParser Token a -> TknParser Token a
+parenTP p = between (keywordTP "(") p (keywordTP ")")
+
+comparitorTP :: TknParser Token Bop
+comparitorTP =  do tkn <- opTP
+                   case tkn of
+                        Ge  -> return Ge
+                        Gt  -> return Gt
+                        Le  -> return Le
+                        Lt  -> return Lt
+                        _   -> fail ""
+
+bopTP :: TknParser Token Expression
+bopTP  = liftM3 (flip Op) factorE (comparitorTP) factorE <|> factorE where
+   factorE =  chainl1 (prodE) (addOp)
+   prodE   =  chainl1 (compE) (mulOp)
+   compE   =  choice [parenTP bopTP, liftM Var varTP, liftM Val intTP]
+   addOp   = opTP >>= \bop -> case bop of
+                                   Plus     -> return $ Op Plus
+                                   Minus    -> return $ Op Minus
+                                   _        -> fail ""
+   mulOp   = opTP >>= \bop -> case bop of
+                                   Times    -> return $ Op Times
+                                   Divide   -> return $ Op Divide
+                                   _        -> fail ""
+
+expTP :: TknParser Token Expression
+expTP  = choice [bopTP, liftM Val valueTP, liftM Var varTP]
+
+-------- test cases for parsing token statements into expression
+
+t21_bsc :: Test
+t21_bsc  = TestList ["s1" ~: succeed (parse expTP [TokVal (IntVal 1)])
+                    ,"s2" ~: succeed (parse expTP [TokVal (IntVal 1),TokBop Plus,TokVal (IntVal 2)])]
+ where   succeed (Left _)  = assert False
+         succeed (Right _) = assert True
+
+t21_more :: Test
+t21_more  = TestList [t21_precedence,t21_comp]
+
+t21_precedence :: Test
+t21_precedence  = parse expTP [(Keyword "("),TokVal (IntVal 1),TokBop Plus,TokVal (IntVal 2),Keyword ")",TokBop Times,Keyword "(",TokVal (IntVal 4),TokBop Divide,TokVal (IntVal 5),Keyword ")"]  ~?=
+                   Right (Op Times (Op Plus (Val (IntVal 1)) (Val (IntVal 2))) (Op Divide (Val (IntVal 4)) (Val (IntVal 5)))) 
+
+t21_comp :: Test
+t21_comp  = parse expTP  [TokVar "L",TokBop Le,TokVal (IntVal 3),TokBop Plus,TokVal (IntVal 4),TokBop Times,TokVal (IntVal 5)] ~?= Right (Op Le (Var "L") (Op Plus (Val (IntVal 3)) (Op Times (Val (IntVal 4)) (Val (IntVal 5)))))
+
+-------- prasing token statements into statement
+
+statementTP :: TknParser Token Statement
+statementTP  = choice [sequenceTP, skipTP, assignTP, ifTP, whileTP]
+
+assignTP :: TknParser Token Statement
+assignTP  = do
+     v   <-  varTP
+     _   <-  keywordTP ":="
+     val <-  expTP
+     return $ Assign v val
+
+ifTP :: TknParser Token Statement
+ifTP  = do 
+    e    <-  between (keywordTP "if") expTP (keywordTP "then")
+    st1  <-  statementTP
+    st2  <-  between (keywordTP "else") statementTP (keywordTP "endif")
+    return (If e st1 st2)
+
+
+whileTP :: TknParser Token Statement
+whileTP  = do 
+    e  <- between (keywordTP "while") expTP (keywordTP "do")
+    st <- statementTP
+    _  <- keywordTP "endwhile"
+    return $ While e st
+
+skipTP :: TknParser Token Statement
+skipTP  = liftM (\_ -> Skip) (keywordTP "skip")
+
+sequenceTP :: TknParser Token Statement
+sequenceTP  = do 
+    st1 <- choice [skipTP, assignTP, ifTP, whileTP]
+    _   <- keywordTP ";"
+    st2 <- statementTP
+    return $ Sequence st1 st2
+
+-------- test cases for tokens statement parsing
+
+t22_more :: Test
+t22_more  = TestList[t22_seq, t22_skip, t22_ass, t22_if, t22_while]
+
+t22_seq :: Test
+t22_seq  = parse statementTP [TokVar "F",Keyword ":=",TokVal (IntVal 1),TokBop Plus,TokVal (IntVal 2),TokBop Times,TokVal (IntVal 3),Keyword ";",TokVar "X",Keyword ":=",TokVal (IntVal 3)] ~?=
+            (Right (Sequence (Assign "F" (Op Plus (Val (IntVal 1)) (Op Times (Val (IntVal 2)) (Val (IntVal 3))))) (Assign "X" (Val (IntVal 3)))))
+   
+t22_skip :: Test
+t22_skip  = parse statementTP [Keyword "skip"] ~?=
+              (Right Skip)
+
+t22_ass :: Test
+t22_ass  = parse statementTP [TokVar "X",Keyword ":=",Keyword "(",TokVal (IntVal 1),TokBop Plus,TokVal (IntVal 2),Keyword ")",TokBop Times,TokVal (IntVal 3)] ~?= 
+            (Right (Assign "X" (Op Times (Op Plus (Val (IntVal 1)) (Val (IntVal 2))) (Val (IntVal 3)))))
+
+t22_if :: Test
+t22_if = parse statementTP [Keyword "if",TokVar "L",TokBop Gt,TokVal (IntVal 2),Keyword "then",TokVar "X",Keyword ":=",TokVal (IntVal 1),Keyword "else",TokVar "X",Keyword ":=",TokVal (IntVal 2),Keyword "endif"] ~?=
+           (Right (If (Op Gt (Var "L") (Val (IntVal 2))) (Assign "X" (Val (IntVal 1))) (Assign "X" (Val (IntVal 2)))))
+
+t22_while :: Test
+t22_while  = parse statementTP [Keyword "while",TokVar "X",TokBop Lt,TokVal (IntVal 3),TokBop Times,TokVal (IntVal 6),Keyword "do",Keyword "skip",Keyword "endwhile"] ~?= 
+              (Right (While (Op Lt (Var "X") (Op Times (Val (IntVal 3)) (Val (IntVal 6)))) Skip))
+
+
+
+
+prop_groundtrip    :: Statement -> Bool
+prop_groundtrip stm = case parse lexer (display stm) of 
+                          Right tokens -> case parse statementTP tokens of
+                                               Right stm'    -> (toList stm) == (toList stm')
+                                               Left  _      -> False
+                          Left  _      -> False
 -----------------------------------------------------------------
 -- A main action to run all the tests...
 
 main :: IO () 
 main = do _ <- runTestTT (TestList [ t0, t0_more,                          -- Prob 0
                                      t11, t11_more,  t12, t12_more, t13,   -- Prob 1
-                                     t2 ])
+                                     t2, t21_bsc, t21_more,t22_more])  -- Prob 2
           return ()
 
